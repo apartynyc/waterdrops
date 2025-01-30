@@ -11,10 +11,33 @@
       width: 100vw;
       height: 100vh;
     }
+    #bottom-right-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    #bottom-right {
+      text-decoration: none;
+      color: white;
+      font-family: Arial, sans-serif;
+      transition: opacity 0.3s ease;
+      pointer-events: auto;
+      display: inline-block;
+      padding: 5px;
+      font-size: 16px;
+    }
+    #bottom-right:hover {
+      opacity: 0.7;
+    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
+  <div id="bottom-right-container">
+    <a href="https://brodygray.com" target="_blank" id="bottom-right">by brody gray</a>
+  </div>
  
   <script>
     const canvas = document.getElementById('canvas');
@@ -33,17 +56,14 @@
       523.25  // C5
     ];
 
-    // Function to play a piano note
     function playNote() {
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       
-      // Create a more piano-like sound
       oscillator.type = 'sine';
       const randomNote = notes[Math.floor(Math.random() * notes.length)];
       oscillator.frequency.setValueAtTime(randomNote, audioContext.currentTime);
       
-      // Shape the sound envelope for a more piano-like effect
       gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
       
@@ -54,9 +74,8 @@
       oscillator.stop(audioContext.currentTime + 0.5);
     }
 
-    // Track last play time to prevent too frequent sounds
     let lastPlayTime = 0;
-    const minTimeBetweenNotes = 100; // Minimum ms between notes
+    const minTimeBetweenNotes = 100;
 
     function resize() {
       const dpr = window.devicePixelRatio || 1;
@@ -75,6 +94,34 @@
 
     let current = new Float32Array(cols * rows);
     let previous = new Float32Array(cols * rows);
+
+    // Initialize with some ripples
+    function initializeWaves() {
+      const numInitialRipples = 5;
+      for (let i = 0; i < numInitialRipples; i++) {
+        const x = Math.floor(Math.random() * cols);
+        const y = Math.floor(Math.random() * rows);
+        const size = Math.random() * 8 + 4; // Random size between 4 and 12
+        const force = Math.random() * 2 + 1; // Random force between 1 and 3
+        
+        for (let dy = -size; dy <= size; dy++) {
+          for (let dx = -size; dx <= size; dx++) {
+            const targetX = x + dx;
+            const targetY = y + dy;
+            if (targetX >= 0 && targetX < cols && targetY >= 0 && targetY < rows) {
+              const distance = Math.sqrt(dx*dx + dy*dy);
+              if (distance < size) {
+                const index = targetY * cols + targetX;
+                previous[index] = force * (1 - distance/size);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Call initialization
+    initializeWaves();
 
     let mouseX = 0;
     let mouseY = 0;
@@ -105,7 +152,6 @@
         }
       }
 
-      // Play note if enough force is applied and enough time has passed
       const now = Date.now();
       if (maxForceThisFrame > 0.5 && now - lastPlayTime > minTimeBetweenNotes) {
         playNote();
@@ -117,13 +163,11 @@
 
     canvas.addEventListener('mousedown', () => {
       isMouseDown = true;
-      // Initial click should also trigger a note
       playNote();
       lastPlayTime = Date.now();
     });
     canvas.addEventListener('mouseup', () => isMouseDown = false);
 
-    // Add touch support
     canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
       const touch = e.touches[0];
@@ -207,7 +251,13 @@
       }
     }, { once: true });
 
+    // Start the animation
     update();
+
+    // Add periodic ripples to keep the water moving
+    setInterval(() => {
+      initializeWaves();
+    }, 3000); // Add new ripples every 3 seconds
   </script>
 </body>
 </html>
