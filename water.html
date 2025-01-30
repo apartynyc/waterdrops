@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+ 
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Piano notes frequencies (C major scale)
+    const notes = [
+      261.63, // C4
+      293.66, // D4
+      329.63, // E4
+      349.23, // F4
+      392.00, // G4
+      440.00, // A4
+      493.88, // B4
+      523.25  // C5
+    ];
+
+    // Function to play a piano note
+    function playNote() {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      // Create a more piano-like sound
+      oscillator.type = 'sine';
+      const randomNote = notes[Math.floor(Math.random() * notes.length)];
+      oscillator.frequency.setValueAtTime(randomNote, audioContext.currentTime);
+      
+      // Shape the sound envelope for a more piano-like effect
+      gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.5);
+    }
+
+    // Track last play time to prevent too frequent sounds
+    let lastPlayTime = 0;
+    const minTimeBetweenNotes = 100; // Minimum ms between notes
+
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const cols = 400;
+    const rows = 400;
+    const dampening = 0.99;
+    const mouseSize = 4;
+    const mouseForce = 2;
+
+    let current = new Float32Array(cols * rows);
+    let previous = new Float32Array(cols * rows);
+
+    let mouseX = 0;
+    let mouseY = 0;
+    let isMouseDown = false;
+    let lastForce = 0;
+
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseX = e.clientX - rect.left;
+      mouseY = e.clientY - rect.top;
+      
+      const gridX = Math.floor((mouseX / rect.width) * cols);
+      const gridY = Math.floor((mouseY / rect.height) * rows);
+      
+      let maxForceThisFrame = 0;
+      
+      for(let dx = -mouseSize; dx <= mouseSize; dx++) {
+        for(let dy = -mouseSize; dy <= mouseSize; dy++) {
+          const x = gridX + dx;
+          const y = gridY + dy;
+          if(x >= 0 && x < cols && y >= 0 && y < rows) {
+            const force = mouseForce * (1 - Math.sqrt(dx*dx + dy*dy) / mouseSize);
+            if(force > 0) {
+              previous[y * cols + x] = force * (isMouseDown ? -1 : 1);
+              maxForceThisFrame = Math.max(maxForceThisFrame, force);
+            }
+          }
+        }
+      }
+
+      // Play note if enough force is applied and enough time has passed
+      const now = Date.now();
+      if (maxForceThisFrame > 0.5 && now - lastPlayTime > minTimeBetweenNotes) {
+        playNote();
+        lastPlayTime = now;
+      }
+      
+      lastForce = maxForceThisFrame;
+    });
+
+    canvas.addEventListener('mousedown', () => {
+      isMouseDown = true;
+      // Initial click should also trigger a note
+      playNote();
+      lastPlayTime = Date.now();
+    });
+    canvas.addEventListener('mouseup', () => isMouseDown = false);
+
+    // Add touch support
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      mouseX = touch.clientX;
+      mouseY = touch.clientY;
+      isMouseDown = true;
+      playNote();
+      lastPlayTime = Date.now();
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      mouseX = touch.clientX;
+      mouseY = touch.clientY;
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => isMouseDown = false);
+
+    function update() {
+      for(let y = 1; y < rows - 1; y++) {
+        for(let x = 1; x < cols - 1; x++) {
+          const i = y * cols + x;
+          const up = i - cols;
+          const down = i + cols;
+          const left = i - 1;
+          const right = i + 1;
+          
+          current[i] = (
+            previous[up] +
+            previous[down] +
+            previous[left] +
+            previous[right]
+          ) / 2 - current[i];
+          
+          current[i] *= dampening;
+        }
+      }
+      
+      const imageData = ctx.createImageData(cols, rows);
+      const data = imageData.data;
+      
+      for(let i = 0; i < cols * rows; i++) {
+        const height = Math.abs(current[i]);
+        const x = i % cols;
+        const y = Math.floor(i / cols);
+        
+        const reflection = Math.max(0, Math.min(255, height * 200));
+        const baseColor = [0, 150, 255];
+        const highlight = Math.max(0, Math.min(255, height * 300));
+        const shadow = Math.max(0, Math.min(55, -height * 100));
+        
+        const index = (y * cols + x) * 4;
+        data[index] = Math.max(0, Math.min(255, baseColor[0] + reflection - shadow));
+        data[index + 1] = Math.max(0, Math.min(255, baseColor[1] + reflection - shadow));
+        data[index + 2] = Math.max(0, Math.min(255, baseColor[2] + highlight - shadow));
+        data[index + 3] = 255;
+      }
+      
+      ctx.putImageData(imageData, 0, 0);
+      ctx.globalComposable = 'screen';
+      
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      
+      ctx.drawImage(canvas, 
+        0, 0, cols, rows,
+        0, 0, canvas.width / (window.devicePixelRatio || 1), 
+        canvas.height / (window.devicePixelRatio || 1)
+      );
+      
+      [current, previous] = [previous, current];
+      
+      requestAnimationFrame(update);
+    }
+
+    // Start audio context on first user interaction
+    canvas.addEventListener('click', () => {
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+    }, { once: true });
+
+    update();
+  </script>
+</body>
+</html>
